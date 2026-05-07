@@ -21,6 +21,7 @@ class Source(BaseModel):
 class ChatResponse(BaseModel):
     answer: str
     sources: list[Source] = Field(default_factory=list)
+    cached: bool = False
 
 
 class HealthResponse(BaseModel):

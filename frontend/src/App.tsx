@@ -5,6 +5,7 @@ import { ChatHistoryItem, Source, sendChatMessage } from './api';
 type ChatMessage = ChatHistoryItem & {
   id: string;
   sources?: Source[];
+  cached?: boolean;
   error?: boolean;
 };
 
@@ -59,7 +60,8 @@ export function App() {
           id: crypto.randomUUID(),
           role: 'assistant',
           content: response.answer,
-          sources: response.sources
+          sources: response.sources,
+          cached: response.cached
         }
       ]);
     } catch (error) {
@@ -142,6 +144,12 @@ export function App() {
                       {message.sources.map((source) => (
                         <code key={source.path}>{source.title}</code>
                       ))}
+                      {message.cached && <code>Cached</code>}
+                    </div>
+                  )}
+                  {message.cached && (!message.sources || message.sources.length === 0) && (
+                    <div className="sources">
+                      <code>Cached</code>
                     </div>
                   )}
                 </div>
@@ -176,4 +184,3 @@ export function App() {
     </main>
   );
 }
-

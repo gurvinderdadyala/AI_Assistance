@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o-mini"
     openai_embedding_model: str = "text-embedding-3-small"
     lmstudio_base_url: str = "http://localhost:1234/v1"
+    lmstudio_chat_base_url: str = ""
+    lmstudio_embedding_base_url: str = ""
     lmstudio_api_key: str = "lm-studio"
     lmstudio_model: str = "local-model"
     lmstudio_embedding_model: str = "text-embedding-model"
@@ -17,7 +19,10 @@ class Settings(BaseSettings):
     ollama_model: str = "llama3.1"
     ollama_embedding_model: str = "nomic-embed-text"
     chroma_persist_dir: str = ".chroma"
+    answer_cache_path: str = ".cache/answers.sqlite3"
+    answer_cache_ttl_seconds: int = 86400
     it_knowledge_dir: str = "data/it_knowledge"
+    index_on_startup: bool = False
     frontend_origin: str = "http://localhost:5173"
     frontend_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
@@ -40,6 +45,10 @@ class Settings(BaseSettings):
         return (self.backend_root / self.chroma_persist_dir).resolve()
 
     @property
+    def answer_cache_db_path(self) -> Path:
+        return (self.backend_root / self.answer_cache_path).resolve()
+
+    @property
     def allowed_frontend_origins(self) -> list[str]:
         origins = [origin.strip() for origin in self.frontend_origins.split(",") if origin.strip()]
         if self.frontend_origin and self.frontend_origin not in origins:
@@ -49,6 +58,14 @@ class Settings(BaseSettings):
     @property
     def normalized_llm_provider(self) -> str:
         return self.llm_provider.strip().lower()
+
+    @property
+    def resolved_lmstudio_chat_base_url(self) -> str:
+        return self.lmstudio_chat_base_url.strip() or self.lmstudio_base_url
+
+    @property
+    def resolved_lmstudio_embedding_base_url(self) -> str:
+        return self.lmstudio_embedding_base_url.strip() or self.lmstudio_base_url
 
 
 @lru_cache

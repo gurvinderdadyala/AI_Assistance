@@ -1,4 +1,6 @@
 from pathlib import Path
+import hashlib
+import logging
 import shutil
 
 from langchain_chroma import Chroma
@@ -11,8 +13,11 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pypdf import PdfReader
 
+from app.answer_cache import AnswerCache
 from app.models import ChatHistoryItem, Source
 from app.settings import Settings
+
+logger = logging.getLogger(__name__)
 
 
 ANSWER_PROMPT = ChatPromptTemplate.from_messages(
@@ -36,6 +41,10 @@ class ITKnowledgeBot:
         self._vector_store: Chroma | None = None
         self._llm: BaseChatModel | None = None
         self._embeddings: Embeddings | None = None
+        self._cache = AnswerCache(
+            db_path=self.settings.answer_cache_db_path,
+            ttl_seconds=self.settings.answer_cache_ttl_seconds,
+        )
 
     @property
     def configured(self) -> bool:
@@ -66,9 +75,18 @@ class ITKnowledgeBot:
 
     def rebuild_index(self) -> int:
         self.initialize()
+        self._cache.clear()
         return len(self._load_documents())
 
-    async def answer(self, question: str, history: list[ChatHistoryItem]) -> tuple[str, list[Source]]:
+    async def answer(self, question: str, history: list[ChatHistoryItem]) -> tuple[str, list[Source], bool]:
+        cache_key = self._cache_key(question)
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            logger.info("Answer cache hit for key %s", cache_key[:12])
+            answer, sources = cached
+            return answer, sources, True
+        logger.info("Answer cache miss for key %s", cache_key[:12])
+
         self._ensure_ready()
         assert self._vector_store is not None
         assert self._llm is not None
@@ -78,10 +96,9 @@ class ITKnowledgeBot:
         sources = self._sources_from_documents(docs)
 
         if not docs:
-            return (
-                "I could not find that in the IT knowledge base. Please contact the IT helpdesk for more help.",
-                [],
-            )
+            answer = "I could not find that in the IT knowledge base. Please contact the IT helpdesk for more help."
+            self._cache.set(cache_key, question, answer, [])
+            return answer, [], False
 
         context = "\n\n".join(
             f"Source: {doc.metadata.get('title', 'Unknown')}\n{doc.page_content}" for doc in docs
@@ -95,7 +112,9 @@ class ITKnowledgeBot:
                 "question": question,
             }
         )
-        return response.content, sources
+        answer = str(response.content)
+        self._cache.set(cache_key, question, answer, sources)
+        return answer, sources, False
 
     def _ensure_configured(self) -> None:
         if not self.configured:
@@ -119,7 +138,7 @@ class ITKnowledgeBot:
             return ChatOpenAI(
                 model=self.settings.lmstudio_model,
                 api_key=self.settings.lmstudio_api_key,
-                base_url=self.settings.lmstudio_base_url,
+                base_url=self.settings.resolved_lmstudio_chat_base_url,
                 temperature=0.2,
             )
         if provider == "ollama":
@@ -147,7 +166,7 @@ class ITKnowledgeBot:
             return OpenAIEmbeddings(
                 model=self.settings.lmstudio_embedding_model,
                 api_key=self.settings.lmstudio_api_key,
-                base_url=self.settings.lmstudio_base_url,
+                base_url=self.settings.resolved_lmstudio_embedding_base_url,
                 check_embedding_ctx_length=False,
             )
         if provider == "ollama":
@@ -235,6 +254,50 @@ class ITKnowledgeBot:
             "path": str(path.relative_to(self.settings.backend_root)),
             "type": path.suffix.lower().lstrip("."),
         }
+
+    def _cache_key(self, question: str) -> str:
+        normalized_question = " ".join(question.strip().lower().split())
+        raw_key = "|".join(
+            [
+                normalized_question,
+                self.settings.normalized_llm_provider,
+                self._active_chat_model_name(),
+                self._active_embedding_model_name(),
+                self._knowledge_fingerprint(),
+            ]
+        )
+        return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+
+    def _active_chat_model_name(self) -> str:
+        provider = self.settings.normalized_llm_provider
+        if provider == "openai":
+            return self.settings.openai_model
+        if provider == "lmstudio":
+            return self.settings.lmstudio_model
+        if provider == "ollama":
+            return self.settings.ollama_model
+        return provider
+
+    def _active_embedding_model_name(self) -> str:
+        provider = self.settings.normalized_llm_provider
+        if provider == "openai":
+            return self.settings.openai_embedding_model
+        if provider == "lmstudio":
+            return self.settings.lmstudio_embedding_model
+        if provider == "ollama":
+            return self.settings.ollama_embedding_model
+        return provider
+
+    def _knowledge_fingerprint(self) -> str:
+        hasher = hashlib.sha256()
+        for path in sorted(self.settings.knowledge_path.glob("*")):
+            if path.suffix.lower() not in {".md", ".pdf"}:
+                continue
+            stat = path.stat()
+            hasher.update(str(path.relative_to(self.settings.backend_root)).encode("utf-8"))
+            hasher.update(str(stat.st_size).encode("utf-8"))
+            hasher.update(str(stat.st_mtime_ns).encode("utf-8"))
+        return hasher.hexdigest()
 
     @staticmethod
     def _sources_from_documents(documents: list[Document]) -> list[Source]:

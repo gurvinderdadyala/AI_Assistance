@@ -13,6 +13,7 @@ export type Source = {
 export type ChatResponse = {
   answer: string;
   sources: Source[];
+  cached: boolean;
 };
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
@@ -37,4 +38,3 @@ export async function sendChatMessage(
 
   return response.json();
 }
-

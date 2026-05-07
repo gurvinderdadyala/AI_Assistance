@@ -13,7 +13,7 @@ bot = ITKnowledgeBot(settings)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if bot.configured:
+    if bot.configured and settings.index_on_startup:
         bot.initialize()
     yield
 
@@ -42,8 +42,8 @@ async def health() -> HealthResponse:
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse:
     try:
-        answer, sources = await bot.answer(request.message, request.history)
-        return ChatResponse(answer=answer, sources=sources)
+        answer, sources, cached = await bot.answer(request.message, request.history)
+        return ChatResponse(answer=answer, sources=sources, cached=cached)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 

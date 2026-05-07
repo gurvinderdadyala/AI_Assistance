@@ -56,12 +56,14 @@ LM Studio:
 ```env
 LLM_PROVIDER=lmstudio
 LMSTUDIO_BASE_URL=http://localhost:1234/v1
+LMSTUDIO_CHAT_BASE_URL=http://localhost:1234/v1
+LMSTUDIO_EMBEDDING_BASE_URL=http://127.0.0.1:1234/v1
 LMSTUDIO_API_KEY=lm-studio
 LMSTUDIO_MODEL=your-loaded-chat-model
 LMSTUDIO_EMBEDDING_MODEL=your-loaded-embedding-model
 ```
 
-Start LM Studio's local server and load a chat model. For document search, also load or expose an embedding model through the OpenAI-compatible embeddings endpoint.
+Start LM Studio's local server and load a chat model. For document search, also load or expose an embedding model through the OpenAI-compatible embeddings endpoint. Use base URLs ending in `/v1`; do not include endpoint suffixes like `/embeddings` or `/chat/completions` in the `.env` values.
 
 Ollama:
 
@@ -80,6 +82,19 @@ ollama pull nomic-embed-text
 ```
 
 After changing providers or embedding models, restart the backend and rebuild the index with `POST /api/reindex`.
+
+By default `INDEX_ON_STARTUP=false`, so the backend starts quickly and builds the vector index on the first chat request or when you call `/api/reindex`. Set `INDEX_ON_STARTUP=true` if you prefer startup to build the index immediately.
+
+### Answer Cache
+
+Repeated exact questions are cached in SQLite so the backend can return the same answer and sources without calling the LLM again. Cached responses return `"cached": true` from `POST /api/chat` and show a cached badge in the UI.
+
+```env
+ANSWER_CACHE_PATH=.cache/answers.sqlite3
+ANSWER_CACHE_TTL_SECONDS=86400
+```
+
+The cache key includes the normalized question, provider, chat model, embedding model, and a fingerprint of files in `backend/data/it_knowledge/`. Running `/api/reindex` clears the cache.
 
 Start the API:
 
