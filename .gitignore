@@ -1,0 +1,10 @@
+backend/.venv/
+backend/.chroma/
+frontend/node_modules/
+frontend/dist/
+node_modules/
+dist/
+.env
+*.pyc
+__pycache__/
+*.log
