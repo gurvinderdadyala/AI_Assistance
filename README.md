@@ -1,6 +1,6 @@
 IT AI Assistance Knowledge Bot
 
-A single-repo sample IT support assistant built with React, FastAPI, LangChain, Chroma, and OpenAI. The assistant answers questions from local Markdown or PDF knowledge-base documents and returns the sources it used.
+A single-repo sample IT support assistant built with React, FastAPI, LangChain, Chroma, and OpenAI-compatible models. The assistant answers questions from local Markdown or PDF knowledge-base documents and returns the sources it used.
 
 ## Project Structure
 
@@ -32,10 +32,54 @@ Copy-Item .env.example .env
 Edit `backend/.env` and set:
 
 ```env
+LLM_PROVIDER=openai
 OPENAI_API_KEY=your_openai_api_key
 OPENAI_MODEL=gpt-4o-mini
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 ```
+
+### Model Provider Options
+
+Choose the provider in `backend/.env` with `LLM_PROVIDER`.
+
+OpenAI:
+
+```env
+LLM_PROVIDER=openai
+OPENAI_API_KEY=your_openai_api_key
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+```
+
+LM Studio:
+
+```env
+LLM_PROVIDER=lmstudio
+LMSTUDIO_BASE_URL=http://localhost:1234/v1
+LMSTUDIO_API_KEY=lm-studio
+LMSTUDIO_MODEL=your-loaded-chat-model
+LMSTUDIO_EMBEDDING_MODEL=your-loaded-embedding-model
+```
+
+Start LM Studio's local server and load a chat model. For document search, also load or expose an embedding model through the OpenAI-compatible embeddings endpoint.
+
+Ollama:
+
+```env
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.1
+OLLAMA_EMBEDDING_MODEL=nomic-embed-text
+```
+
+Install and pull the models first:
+
+```powershell
+ollama pull llama3.1
+ollama pull nomic-embed-text
+```
+
+After changing providers or embedding models, restart the backend and rebuild the index with `POST /api/reindex`.
 
 Start the API:
 

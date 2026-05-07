@@ -3,8 +3,10 @@ import shutil
 
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
+from langchain_core.embeddings import Embeddings
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pypdf import PdfReader
@@ -32,12 +34,15 @@ class ITKnowledgeBot:
     def __init__(self, settings: Settings):
         self.settings = settings
         self._vector_store: Chroma | None = None
-        self._llm: ChatOpenAI | None = None
-        self._embeddings: OpenAIEmbeddings | None = None
+        self._llm: BaseChatModel | None = None
+        self._embeddings: Embeddings | None = None
 
     @property
     def configured(self) -> bool:
-        return bool(self.settings.openai_api_key.strip())
+        provider = self.settings.normalized_llm_provider
+        if provider == "openai":
+            return bool(self.settings.openai_api_key.strip())
+        return provider in {"lmstudio", "ollama"}
 
     @property
     def indexed(self) -> bool:
@@ -48,15 +53,8 @@ class ITKnowledgeBot:
         if self.settings.chroma_path.exists():
             shutil.rmtree(self.settings.chroma_path)
         self.settings.chroma_path.mkdir(parents=True, exist_ok=True)
-        self._embeddings = OpenAIEmbeddings(
-            model=self.settings.openai_embedding_model,
-            api_key=self.settings.openai_api_key,
-        )
-        self._llm = ChatOpenAI(
-            model=self.settings.openai_model,
-            api_key=self.settings.openai_api_key,
-            temperature=0.2,
-        )
+        self._embeddings = self._create_embeddings()
+        self._llm = self._create_llm()
         documents = self._load_documents()
         chunks = self._split_documents(documents)
         self._vector_store = Chroma.from_documents(
@@ -101,9 +99,69 @@ class ITKnowledgeBot:
 
     def _ensure_configured(self) -> None:
         if not self.configured:
+            if self.settings.normalized_llm_provider == "openai":
+                raise RuntimeError(
+                    "OPENAI_API_KEY is not configured. Copy backend/.env.example to backend/.env and set OPENAI_API_KEY."
+                )
             raise RuntimeError(
-                "OPENAI_API_KEY is not configured. Copy backend/.env.example to backend/.env and set OPENAI_API_KEY."
+                "LLM_PROVIDER must be one of: openai, lmstudio, ollama."
             )
+
+    def _create_llm(self) -> BaseChatModel:
+        provider = self.settings.normalized_llm_provider
+        if provider == "openai":
+            return ChatOpenAI(
+                model=self.settings.openai_model,
+                api_key=self.settings.openai_api_key,
+                temperature=0.2,
+            )
+        if provider == "lmstudio":
+            return ChatOpenAI(
+                model=self.settings.lmstudio_model,
+                api_key=self.settings.lmstudio_api_key,
+                base_url=self.settings.lmstudio_base_url,
+                temperature=0.2,
+            )
+        if provider == "ollama":
+            try:
+                from langchain_ollama import ChatOllama
+            except ImportError as exc:
+                raise RuntimeError(
+                    "Ollama support requires langchain-ollama. Run pip install -r requirements.txt."
+                ) from exc
+            return ChatOllama(
+                model=self.settings.ollama_model,
+                base_url=self.settings.ollama_base_url,
+                temperature=0.2,
+            )
+        raise RuntimeError("LLM_PROVIDER must be one of: openai, lmstudio, ollama.")
+
+    def _create_embeddings(self) -> Embeddings:
+        provider = self.settings.normalized_llm_provider
+        if provider == "openai":
+            return OpenAIEmbeddings(
+                model=self.settings.openai_embedding_model,
+                api_key=self.settings.openai_api_key,
+            )
+        if provider == "lmstudio":
+            return OpenAIEmbeddings(
+                model=self.settings.lmstudio_embedding_model,
+                api_key=self.settings.lmstudio_api_key,
+                base_url=self.settings.lmstudio_base_url,
+                check_embedding_ctx_length=False,
+            )
+        if provider == "ollama":
+            try:
+                from langchain_ollama import OllamaEmbeddings
+            except ImportError as exc:
+                raise RuntimeError(
+                    "Ollama support requires langchain-ollama. Run pip install -r requirements.txt."
+                ) from exc
+            return OllamaEmbeddings(
+                model=self.settings.ollama_embedding_model,
+                base_url=self.settings.ollama_base_url,
+            )
+        raise RuntimeError("LLM_PROVIDER must be one of: openai, lmstudio, ollama.")
 
     def _ensure_ready(self) -> None:
         if self._vector_store is None or self._llm is None:

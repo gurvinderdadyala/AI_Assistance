@@ -31,7 +31,12 @@ app.add_middleware(
 
 @app.get("/api/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
-    return HealthResponse(status="ok", configured=bot.configured, indexed=bot.indexed)
+    return HealthResponse(
+        status="ok",
+        configured=bot.configured,
+        indexed=bot.indexed,
+        provider=settings.normalized_llm_provider,
+    )
 
 
 @app.post("/api/chat", response_model=ChatResponse)

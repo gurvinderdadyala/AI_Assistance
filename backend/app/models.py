@@ -27,4 +27,4 @@ class HealthResponse(BaseModel):
     status: str
     configured: bool
     indexed: bool
-
+    provider: str
